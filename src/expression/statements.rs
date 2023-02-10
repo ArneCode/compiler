@@ -1,7 +1,10 @@
 use core::fmt;
 use std::{collections::HashMap, rc::Rc};
 
-use crate::pattern::{BlockPatt, ExprBuilder, ExprPattern, SimplePattern, TextPatt};
+use crate::{
+    mips,
+    pattern::{BlockPatt, ExprBuilder, ExprPattern, SimplePattern, TextPatt},
+};
 
 use super::{BlockType, CodeBlock, Expression};
 
@@ -49,7 +52,11 @@ pub struct TwoSideOp {
 
 impl Expression for TwoSideOp {
     fn gen_mips(&self) -> String {
-        self.values.0.gen_mips() + &self.values.1.gen_mips() + &self.mips
+        self.values.0.gen_mips()
+            + &self.values.1.gen_mips()
+            + &mips::pop_two()
+            + &self.mips
+            + &mips::save_t0()
     }
 
     fn get_name(&self) -> String {
@@ -90,7 +97,8 @@ impl TwoSideOp {
 pub struct Number(pub String);
 impl Expression for Number {
     fn gen_mips(&self) -> String {
-        todo!()
+        let value = &self.0;
+        mips::push_value(value)
     }
     fn get_name(&self) -> String {
         String::from("number")
@@ -136,6 +144,9 @@ impl Expression for Var {
         self.name.clone()
     }
 }
+#[derive(Clone, Debug)]
+pub struct Assignement {}
+
 pub trait Function {
     fn get_call_mips(&self) -> String;
     fn get_name(&self) -> String;
@@ -172,7 +183,7 @@ impl fmt::Debug for FunctionCall {
 }
 impl Expression for FunctionCall {
     fn gen_mips(&self) -> String {
-        self.func.get_call_mips()
+        self.arg.gen_mips() + &self.func.get_call_mips()
     }
     fn get_name(&self) -> String {
         String::from("func")
@@ -181,7 +192,7 @@ impl Expression for FunctionCall {
 pub struct PrintFn;
 impl Function for PrintFn {
     fn get_call_mips(&self) -> String {
-        todo!()
+        mips::syscall(4)
     }
 
     fn get_name(&self) -> String {

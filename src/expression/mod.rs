@@ -48,7 +48,11 @@ impl CodeBlock {
 
 impl Expression for CodeBlock {
     fn gen_mips(&self) -> String {
-        todo!()
+        self.lines
+            .iter()
+            .map(|l| l.gen_mips())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn get_name(&self) -> String {
