@@ -13,9 +13,9 @@ pub fn pop_two() -> String {
 pub fn syscall(code: u32) -> String {
     pop() + &format!("addi $v0, $zero, {code}\nadd $a0, $t0, $zero\nsyscall\n")
 }
-pub fn load_var(addr: usize) -> String {
+pub fn load_var(addr: i32) -> String {
     //addr is the offset from base pointer in $t6
-    format!("#loading var\naddi $t0, $t6, {addr}\nlw $t0, 0($t0)\n") + &save_t0()
+    format!("#loading var\naddi $t0, $t6, {addr}\nlb $t0, 0($t0)\n") + &save_t0()
 }
 pub fn save_var(addr: usize) -> String {
     //addr is the offset from base pointer in $t6

@@ -1,9 +1,14 @@
 use core::fmt;
 
+use self::statements::FrameStack;
+
 pub mod statements;
 pub trait Expression: ExpressionClone + fmt::Debug {
     fn gen_mips(&self) -> String;
     fn get_name(&self) -> String;
+    fn as_block(&self) -> Option<&CodeBlock> {
+        None
+    }
 }
 pub trait ExpressionClone {
     fn clone_box(&self) -> Box<dyn Expression>;
@@ -34,15 +39,17 @@ impl BlockType {
         })
     }
 }
+
 #[derive(Clone, Debug)]
 pub struct CodeBlock {
     block_type: BlockType,
     lines: Vec<Box<dyn Expression>>,
+    pub frame: Option<FrameStack>,
 }
 
 impl CodeBlock {
-    pub fn new(lines: Vec<Box<dyn Expression>>, block_type: BlockType) -> Self {
-        Self { block_type, lines }
+    pub fn new(lines: Vec<Box<dyn Expression>>, block_type: BlockType, frame: Option<FrameStack>) -> Self {
+        Self { block_type, lines, frame }
     }
 }
 
@@ -57,5 +64,8 @@ impl Expression for CodeBlock {
 
     fn get_name(&self) -> String {
         self.block_type.get_name()
+    }
+    fn as_block(&self) -> Option<&CodeBlock> {
+        Some(self)
     }
 }

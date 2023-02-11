@@ -60,7 +60,7 @@ fn parse_braces<'a>(
                 //parsing the tokens into an expression
                 let mut frame = frame.push();
                 let lines = parse_tokens(nodes.to_vec(), builders, &mut frame);
-                let block = Box::new(CodeBlock::new(lines, BlockType::Curl));
+                let block = Box::new(CodeBlock::new(lines, BlockType::Curl, Some(frame)));
                 //replacing the tokens with the expression, delete the brackets as well
                 tokens_or_expr.splice(i..=brack_end, vec![TORE::Expr(block)]);
             }
@@ -83,7 +83,7 @@ fn parse_brackets<'a>(
                 let nodes = tokens_or_expr[i + 1..brack_end].to_vec();
                 //parsing the tokens into an expression
                 let lines = parse_tokens(nodes.to_vec(), builders, frame);
-                let block = Box::new(CodeBlock::new(lines, BlockType::Brack));
+                let block = Box::new(CodeBlock::new(lines, BlockType::Brack, None));
                 //replacing the tokens with the expression, delete the brackets as well
                 tokens_or_expr.splice(i..=brack_end, vec![TORE::Expr(block)]);
             }
@@ -108,7 +108,7 @@ fn parse_tokens(
         .into_iter()
         .filter_map(|token| match token {
             TORE::Token(t) => {
-                if t.slice == ";" {
+                if t.slice == ";" || t.slice == "," {
                     None
                 } else if t.token_type == TokenType::Word {
                     let name = t.slice.to_string();
@@ -136,13 +136,13 @@ pub fn parse_nums(tokens: Vec<TORE>) -> Vec<TORE> {
         })
         .collect()
 }
-pub fn parse(code: String, builders: &Vec<ExprBuilder>) -> (Box<dyn Expression>, FrameStack) {
+pub fn parse(code: String, builders: &Vec<ExprBuilder>) -> CodeBlock {
     let tokens = lex(&code);
     let tokens_or_expr = tokens.into_iter().map(|t| TORE::Token(t)).collect();
     let tokens_or_expr = parse_nums(tokens_or_expr);
     println!("tokens: {:#?}", tokens_or_expr);
     let mut frame = FrameStack::new();
     let lines = parse_tokens(tokens_or_expr, builders, &mut frame);
-    let code = CodeBlock::new(lines, BlockType::Curl);
-    (Box::new(code), frame)
+    let code = CodeBlock::new(lines, BlockType::Curl, Some(frame));
+    code
 }
