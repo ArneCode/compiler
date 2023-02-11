@@ -1,6 +1,6 @@
 use crate::{
     expression::{
-        statements::{FrameLayer, Var},
+        statements::{FrameLayer, FrameStack, Var},
         BlockType, Expression,
     },
     lexer::token::{Token, TokenType},
@@ -64,16 +64,13 @@ impl SimplePattern for ExprPattern {
         None
     }
 }
+pub type ExprConstr = Box<dyn Fn(Vec<Box<dyn Expression>>, &mut FrameStack) -> Box<dyn Expression>>;
 pub struct ExprBuilder {
     patterns: Vec<Box<dyn SimplePattern>>,
-    constructor: Box<dyn Fn(Vec<Box<dyn Expression>>, &mut FrameLayer) -> Box<dyn Expression>>,
+    constructor: ExprConstr,
 }
-
 impl ExprBuilder {
-    pub fn new(
-        patterns: Vec<Box<dyn SimplePattern>>,
-        constructor: Box<dyn Fn(Vec<Box<dyn Expression>>, &mut FrameLayer) -> Box<dyn Expression>>,
-    ) -> Self {
+    pub fn new(patterns: Vec<Box<dyn SimplePattern>>, constructor: ExprConstr) -> Self {
         Self {
             patterns,
             constructor,
@@ -82,7 +79,7 @@ impl ExprBuilder {
     pub fn parse_occurences<'a>(
         &self,
         mut tokens: Vec<TORE<'a>>,
-        frame: &mut FrameLayer,
+        frame: &mut FrameStack,
     ) -> Vec<TORE<'a>> {
         let mut i = 0;
         'token_loop: while i + self.patterns.len() <= tokens.len() {

@@ -1,11 +1,13 @@
 use core::fmt;
-use std::{collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use rand::random;
 
 use crate::{
     mips,
-    pattern::{BlockPatt, ExprBuilder, ExprPattern, SimplePattern, TextPatt, TextPattVar},
+    pattern::{
+        BlockPatt, ExprBuilder, ExprConstr, ExprPattern, SimplePattern, TextPatt, TextPattVar,
+    },
 };
 
 use super::{BlockType, CodeBlock, Expression};
@@ -21,23 +23,21 @@ impl Expression for IfBlock {
         let cond_mips = self.cond.gen_mips();
         let if_mips = mips::pop() + &format!("#branch:\nbeqz $t0, if_false{id}\n");
 
-        cond_mips + &if_mips + "#branch code: \n" + &self.code.gen_mips() + &format!("if_false{id}:\n")
+        cond_mips
+            + &if_mips
+            + "#branch code: \n"
+            + &self.code.gen_mips()
+            + &format!("if_false{id}:\n")
     }
     fn get_name(&self) -> String {
         String::from("if")
     }
 }
 impl IfBlock {
-    fn new(
-        code: Box<dyn Expression>,
-        cond: Box<dyn Expression>,
-    ) -> Self {
-        Self {
-            code,
-            cond
-        }
+    fn new(code: Box<dyn Expression>, cond: Box<dyn Expression>) -> Self {
+        Self { code, cond }
     }
-    fn construct(mut params: Vec<Box<dyn Expression>>, _: &mut FrameLayer) -> Box<dyn Expression> {
+    fn construct(mut params: Vec<Box<dyn Expression>>, _: &mut FrameStack) -> Box<dyn Expression> {
         assert_eq!(params.len(), 2);
         let code = params.pop().unwrap();
         let cond = params.pop().unwrap();
@@ -49,8 +49,7 @@ impl IfBlock {
             Box::new(BlockPatt(BlockType::Brack)),
             Box::new(BlockPatt(BlockType::Curl)),
         ];
-        let constructor: Box<dyn Fn(Vec<Box<dyn Expression>>, &mut FrameLayer) -> Box<dyn Expression>> =
-            Box::new(Self::construct);
+        let constructor: ExprConstr = Box::new(Self::construct);
         ExprBuilder::new(patterns, constructor)
     }
 }
@@ -62,26 +61,25 @@ pub struct WhileBlock {
 }
 impl Expression for WhileBlock {
     fn gen_mips(&self) -> String {
-        let id:u32 = random();
+        let id: u32 = random();
         let cond_mips = self.cond.gen_mips();
         let while_mips = mips::pop() + &format!("#branch:\nbeqz $t0, while_end{id}\n");
-        format!("while_start{id}:\n#calc cond\n") + &cond_mips + "#eval cond: \n"+ &while_mips  + &self.code.gen_mips() + &format!("j while_start{id}\nwhile_end{id}:\n")
+        format!("while_start{id}:\n#calc cond\n")
+            + &cond_mips
+            + "#eval cond: \n"
+            + &while_mips
+            + &self.code.gen_mips()
+            + &format!("j while_start{id}\nwhile_end{id}:\n")
     }
     fn get_name(&self) -> String {
         String::from("while")
     }
 }
 impl WhileBlock {
-    fn new(
-        code: Box<dyn Expression>,
-        cond: Box<dyn Expression>,
-    ) -> Self {
-        Self {
-            code,
-            cond
-        }
+    fn new(code: Box<dyn Expression>, cond: Box<dyn Expression>) -> Self {
+        Self { code, cond }
     }
-    fn construct(mut params: Vec<Box<dyn Expression>>, _: &mut FrameLayer) -> Box<dyn Expression> {
+    fn construct(mut params: Vec<Box<dyn Expression>>, _: &mut FrameStack) -> Box<dyn Expression> {
         assert_eq!(params.len(), 2);
         let code = params.pop().unwrap();
         let cond = params.pop().unwrap();
@@ -93,8 +91,7 @@ impl WhileBlock {
             Box::new(BlockPatt(BlockType::Brack)),
             Box::new(BlockPatt(BlockType::Curl)),
         ];
-        let constructor: Box<dyn Fn(Vec<Box<dyn Expression>>, &mut FrameLayer) -> Box<dyn Expression>> =
-            Box::new(Self::construct);
+        let constructor: ExprConstr = Box::new(Self::construct);
         ExprBuilder::new(patterns, constructor)
     }
 }
@@ -135,16 +132,15 @@ impl TwoSideOp {
         ];
         let sign = sign.to_string();
         let mips = mips.to_string();
-        let constructor: Box<dyn Fn(Vec<Box<dyn Expression>>, &mut FrameLayer) -> Box<dyn Expression>> =
-            Box::new(move |mut params, _| {
-                let b = params.pop().unwrap();
-                let a = params.pop().unwrap();
-                Box::new(Self {
-                    values: (a, b),
-                    sign: sign.clone(),
-                    mips: mips.clone(),
-                })
-            });
+        let constructor: ExprConstr = Box::new(move |mut params, _| {
+            let b = params.pop().unwrap();
+            let a = params.pop().unwrap();
+            Box::new(Self {
+                values: (a, b),
+                sign: sign.clone(),
+                mips: mips.clone(),
+            })
+        });
 
         ExprBuilder::new(patterns, constructor)
     }
@@ -170,11 +166,11 @@ impl FrameLayer {
             vars: HashMap::new(),
         }
     }
-    pub fn get_addr(&mut self, name: &str) -> usize {
+    pub fn get_addr(&mut self, name: &str, alt_addr: usize) -> usize {
         if let Some(addr) = self.vars.get(name) {
             *addr
         } else {
-            let addr = self.vars.len();
+            let addr = alt_addr;
             self.vars.insert(name.to_string(), addr);
             addr
         }
@@ -185,32 +181,42 @@ impl FrameLayer {
         format!("add $t6, $sp, $zero\naddi $sp, $sp, {n}\n")
     }
 }
-pub struct FrameStack{
+pub struct FrameStack {
     layers: Vec<Rc<FrameLayer>>,
     top: FrameLayer,
+    n_vars: Rc<RefCell<usize>>,
 }
-impl FrameStack{
-    pub fn new() -> Self{
-        Self{
+impl FrameStack {
+    pub fn new() -> Self {
+        Self {
             layers: vec![],
             top: FrameLayer::new(),
+            n_vars: Rc::new(RefCell::new(0)),
         }
     }
-    pub fn push(&self) -> Self{
+    pub fn push(&self) -> Self {
         let mut layers = self.layers.clone();
         layers.push(Rc::new(self.top.clone()));
         let top = FrameLayer::new();
-        Self{layers,top}
+        Self {
+            layers,
+            top,
+            n_vars: self.n_vars.clone(),
+        }
     }
-    pub fn get_addr(&mut self, name: &str) -> usize{
-        for layer in self.layers.iter().rev(){
-            if let Some(addr) = layer.vars.get(name){
+    pub fn get_addr(&mut self, name: &str) -> usize {
+        for layer in self.layers.iter().rev() {
+            if let Some(addr) = layer.vars.get(name) {
                 return *addr;
             }
         }
-        self.top.get_addr(name)
+        *self.n_vars.borrow_mut() += 1;
+        self.top.get_addr(name, *self.n_vars.borrow() - 1)
     }
-
+    pub fn gen_mips(&self) -> String {
+        let n = *self.n_vars.borrow();
+        format!("add $t6, $sp, $zero\naddi $sp, $sp, {n}\n")
+    }
 }
 #[derive(Clone, Debug)]
 pub struct Var {
@@ -253,13 +259,12 @@ impl FunctionCall {
             Box::new(TextPatt(func.get_name())),
             Box::new(BlockPatt(BlockType::Brack)),
         ];
-        let constructor: Box<dyn Fn(Vec<Box<dyn Expression>>, &mut FrameLayer) -> Box<dyn Expression>> =
-            Box::new(move |mut params, _| {
-                assert_eq!(params.len(), 1);
-                let arg = params.pop().unwrap();
-                let func = Box::new(Self::new(func.clone(), arg));
-                func
-            });
+        let constructor: ExprConstr = Box::new(move |mut params, _| {
+            assert_eq!(params.len(), 1);
+            let arg = params.pop().unwrap();
+            let func = Box::new(Self::new(func.clone(), arg));
+            func
+        });
         ExprBuilder::new(patterns, constructor)
     }
 }
@@ -303,15 +308,16 @@ impl VarDecl {
             Box::new(TextPatt(String::from("sei"))),
             Box::new(ExprPattern),
         ];
-        let constructor: Box<dyn Fn(Vec<Box<dyn Expression>>, &mut FrameLayer) -> Box<dyn Expression>> =
-            Box::new(move |mut params, frame| {
-                let value = params.pop().unwrap();
-                let name = params.pop().unwrap();
-                let name = name.get_name();
-                let addr = frame.get_addr(&name);
-                let var = Box::new(Self::new(name, addr, value));
-                var
-            });
+        let constructor: Box<
+            dyn Fn(Vec<Box<dyn Expression>>, &mut FrameStack) -> Box<dyn Expression>,
+        > = Box::new(move |mut params, frame| {
+            let value = params.pop().unwrap();
+            let name = params.pop().unwrap();
+            let name = name.get_name();
+            let addr = frame.get_addr(&name);
+            let var = Box::new(Self::new(name, addr, value));
+            var
+        });
         ExprBuilder::new(patterns, constructor)
     }
 }
