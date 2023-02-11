@@ -1,6 +1,9 @@
 use crate::{
-    expression::{BlockType, Expression},
-    lexer::token::Token,
+    expression::{
+        statements::{FrameLayer, Var},
+        BlockType, Expression,
+    },
+    lexer::token::{Token, TokenType},
 };
 
 #[derive(Clone, Debug)]
@@ -11,6 +14,7 @@ pub enum TORE<'a> {
 pub trait SimplePattern {
     fn match_tore<'a>(&self, t: &TORE<'a>) -> Option<Option<Box<dyn Expression>>>;
 }
+//just consumes text
 pub struct TextPatt(pub String);
 impl SimplePattern for TextPatt {
     fn match_tore<'a>(&self, t: &TORE<'a>) -> Option<Option<Box<dyn Expression>>> {
@@ -20,6 +24,18 @@ impl SimplePattern for TextPatt {
             }
         }
         None
+    }
+}
+//returns text
+pub struct TextPattVar;
+impl SimplePattern for TextPattVar {
+    fn match_tore<'a>(&self, t: &TORE<'a>) -> Option<Option<Box<dyn Expression>>> {
+        if let TORE::Token(t) = t {
+            let var = Var::new(t.slice.to_string(), 0);
+            Some(Some(Box::new(var)))
+        } else {
+            None
+        }
     }
 }
 pub struct BlockPatt(pub BlockType);
@@ -38,28 +54,36 @@ impl SimplePattern for ExprPattern {
     fn match_tore<'a>(&self, t: &TORE<'a>) -> Option<Option<Box<dyn Expression>>> {
         if let TORE::Expr(e) = t {
             return Some(Some(e.clone()));
-        } else {
-            //operator or similar
-            None
+        } else if let TORE::Token(t) = t {
+            if t.token_type == TokenType::Word {
+                let name = t.slice.to_string();
+                let var: Box<dyn Expression> = Box::new(Var::new(name, 0));
+                return Some(Some(var));
+            }
         }
+        None
     }
 }
 pub struct ExprBuilder {
     patterns: Vec<Box<dyn SimplePattern>>,
-    constructor: Box<dyn Fn(Vec<Box<dyn Expression>>) -> Box<dyn Expression>>,
+    constructor: Box<dyn Fn(Vec<Box<dyn Expression>>, &mut FrameLayer) -> Box<dyn Expression>>,
 }
 
 impl ExprBuilder {
     pub fn new(
         patterns: Vec<Box<dyn SimplePattern>>,
-        constructor: Box<dyn Fn(Vec<Box<dyn Expression>>) -> Box<dyn Expression>>,
+        constructor: Box<dyn Fn(Vec<Box<dyn Expression>>, &mut FrameLayer) -> Box<dyn Expression>>,
     ) -> Self {
         Self {
             patterns,
             constructor,
         }
     }
-    pub fn parse_occurences<'a>(&self, mut tokens: Vec<TORE<'a>>) -> Vec<TORE<'a>> {
+    pub fn parse_occurences<'a>(
+        &self,
+        mut tokens: Vec<TORE<'a>>,
+        frame: &mut FrameLayer,
+    ) -> Vec<TORE<'a>> {
         let mut i = 0;
         'token_loop: while i + self.patterns.len() <= tokens.len() {
             let mut params = vec![];
@@ -74,7 +98,7 @@ impl ExprBuilder {
                     continue 'token_loop;
                 }
             }
-            let expr = TORE::Expr((self.constructor)(params));
+            let expr = TORE::Expr((self.constructor)(params, frame));
             tokens.splice(i..(i + self.patterns.len()), [expr]);
             i += 1;
         }

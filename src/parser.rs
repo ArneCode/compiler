@@ -1,6 +1,6 @@
 use crate::{
     expression::{
-        statements::{Number, StackFrame, Var},
+        statements::{Number, FrameLayer, Var},
         BlockType, CodeBlock, Expression,
     },
     lexer::{
@@ -48,7 +48,7 @@ fn find_matching_bracket<'a>(
 fn parse_braces<'a>(
     mut tokens_or_expr: Vec<TORE<'a>>,
     builders: &Vec<ExprBuilder>,
-    frame: &mut StackFrame,
+    frame: &mut FrameLayer,
 ) -> Vec<TORE<'a>> {
     //parsing brackets and functions
     let mut i = 0;
@@ -71,7 +71,7 @@ fn parse_braces<'a>(
 fn parse_brackets<'a>(
     mut tokens_or_expr: Vec<TORE<'a>>,
     builders: &Vec<ExprBuilder>,
-    frame: &mut StackFrame,
+    frame: &mut FrameLayer,
 ) -> Vec<TORE<'a>> {
     //parsing brackets and functions
     let mut i = 0;
@@ -94,13 +94,14 @@ fn parse_brackets<'a>(
 fn parse_tokens(
     mut tokens: Vec<TORE>,
     builders: &Vec<ExprBuilder>,
-    frame: &mut StackFrame,
+    frame: &mut FrameLayer,
 ) -> Vec<Box<dyn Expression>> {
     tokens = parse_braces(tokens, builders, frame);
     tokens = parse_brackets(tokens, builders, frame);
     for builder in builders {
-        tokens = builder.parse_occurences(tokens);
+        tokens = builder.parse_occurences(tokens, frame);
     }
+    println!("{:#?}", tokens);
     //make lines
     let lines = tokens
         .into_iter()
@@ -134,13 +135,13 @@ pub fn parse_nums(tokens: Vec<TORE>) -> Vec<TORE> {
         })
         .collect()
 }
-pub fn parse(code: String, builders: &Vec<ExprBuilder>) -> Box<dyn Expression> {
+pub fn parse(code: String, builders: &Vec<ExprBuilder>) -> (Box<dyn Expression>, FrameLayer) {
     let tokens = lex(&code);
     let tokens_or_expr = tokens.into_iter().map(|t| TORE::Token(t)).collect();
     let tokens_or_expr = parse_nums(tokens_or_expr);
     println!("tokens: {:#?}", tokens_or_expr);
-    let mut frame = StackFrame::new();
+    let mut frame = FrameLayer::new();
     let lines = parse_tokens(tokens_or_expr, builders, &mut frame);
     let code = CodeBlock::new(lines, BlockType::Curl);
-    Box::new(code)
+    (Box::new(code),frame)
 }
